@@ -1,15 +1,18 @@
 import streamlit as st
-from langchain.chat_models import ChatOpenAI
-import os
 from dotenv import load_dotenv
-from io import StringIO
+import os
 import openai
-from langchain.llms import OpenAI
+
+
+
+from openai import OpenAI
+
 
 # Load environment variables
 load_dotenv()
 openai_api_key=os.getenv("OPENAI_API_KEY")
 openai.api_key = openai_api_key
+client = OpenAI(api_key=openai_api_key)
 
 def login():
     col1, col2, col3 = st.columns([2,6,2])
@@ -29,12 +32,28 @@ def login():
                 return True
             else:
                 st.error('Invalid username or password')
+
 def main_page():
     st.title('🦜🔗 Ai Helper App')
 
     def generate_response(input_text):
-        llm = OpenAI(temperature=0.7, openai_api_key=openai_api_key)
-        return llm(input_text)
+        response = client.chat.completions.create(
+        model="gpt-4-1106-preview",
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a helpful assistant."
+            },
+            {
+                "role": "user",
+                "content": input_text
+            }
+        ]
+    )
+        # The assistant's reply can be found in the last message in the response
+
+        answer = response.choices[0].message.content
+        return answer
 
     option = st.selectbox('Choose an option', ('Chat', 'Upload file'))
     if option == 'Chat':
@@ -49,24 +68,12 @@ def main_page():
         if prompt:
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.spinner('Waiting for reply...'):
-                full_response = ""
-                for response in openai.ChatCompletion.create(
-                    model="gpt-4-1106-preview",
-                    messages=[{"role": m["role"], "content": m["content"]}
-                              for m in st.session_state.messages], stream=True):
-                    full_response += response.choices[0].delta.get("content", "")
+                full_response = generate_response(prompt)
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
                 with st.chat_message("assistant"):
                     st.markdown(full_response)
 
-    elif option == 'Upload file':
-        uploaded_file = st.file_uploader("Choose a file")
-        if uploaded_file is not None:
-            bytes_data = uploaded_file.getvalue()
-            stringio = StringIO(uploaded_file.getvalue().decode("utf-8"))
-            string_data = stringio.read()
-            response = generate_response(string_data)
-            st.info(response)
+
 
 if 'logged_in' not in st.session_state or not st.session_state.logged_in:
     st.session_state.logged_in = login()
