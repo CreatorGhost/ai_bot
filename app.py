@@ -51,7 +51,7 @@ def main_page():
             with st.spinner('Waiting for reply...'):
                 full_response = ""
                 for response in openai.ChatCompletion.create(
-                    model="gpt-4",
+                    model="gpt-4-1106-preview",
                     messages=[{"role": m["role"], "content": m["content"]}
                               for m in st.session_state.messages], stream=True):
                     full_response += response.choices[0].delta.get("content", "")
