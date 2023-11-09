@@ -1,18 +1,18 @@
-import streamlit as st
-from dotenv import load_dotenv
 import os
-import openai
+import streamlit as st
+import time
+from dotenv import load_dotenv
+from langchain.agents import AgentType, initialize_agent, load_tools
+from langchain.callbacks import StreamlitCallbackHandler
+from langchain.chat_models import ChatOpenAI
+from langchain.memory import ConversationBufferWindowMemory
 
-
-
-from openai import OpenAI
 
 
 # Load environment variables
 load_dotenv()
 openai_api_key=os.getenv("OPENAI_API_KEY")
-openai.api_key = openai_api_key
-client = OpenAI(api_key=openai_api_key)
+
 
 def login():
     col1, col2, col3 = st.columns([2,6,2])
@@ -29,53 +29,61 @@ def login():
             valid_username = os.getenv("USER1_USERNAME")
             valid_password = os.getenv("USER1_PASSWORD")
             if username == valid_username and password == valid_password:
-                return True
+                st.session_state.logged_in = True  # Set logged_in in session_state to True
             else:
                 st.error('Invalid username or password')
 
-def main_page():
-    st.title('🦜🔗 Ai Helper App')
+def run_chatbot():
+    # Load OpenAI API key
+    load_dotenv()
+    openai_api_key = os.getenv("OPENAI_API_KEY")
 
-    def generate_response(input_text):
-        response = client.chat.completions.create(
-        model="gpt-4-1106-preview",
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a helpful assistant."
-            },
-            {
-                "role": "user",
-                "content": input_text
-            }
-        ]
+    # Initialize the OpenAI model
+    llm = ChatOpenAI(model="gpt-4-1106-preview", openai_api_key=openai_api_key)
+
+    # Initialize the agent with tools
+    tools = load_tools(["ddg-search"])
+    memory = ConversationBufferWindowMemory(memory_key="chat_history", return_messages=True,k=7)
+    agent = initialize_agent(
+        tools, llm, agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION, verbose=True, memory=memory
     )
-        # The assistant's reply can be found in the last message in the response
 
-        answer = response.choices[0].message.content
-        return answer
+    # Initialize the Streamlit callback handler
+    st_callback = StreamlitCallbackHandler(st.container())
 
-    option = st.selectbox('Choose an option', ('Chat', 'Upload file'))
-    if option == 'Chat':
-        if "messages" not in st.session_state:
-            st.session_state.messages = [{"role": "system", "content": "Welcome to the chat! You can start by typing a message in the box below."}]
-
+    # Initialize chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    
+    else:
         for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+            memory.save_context({'input':message['human']},{'output':message['AI']})
 
-        prompt = st.chat_input("What is up?")
-        if prompt:
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.spinner('Waiting for reply...'):
-                full_response = generate_response(prompt)
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
-                with st.chat_message("assistant"):
-                    st.markdown(full_response)
+    # Display chat messages from history on app rerun
+    for message in st.session_state.messages:
+        with st.chat_message(message["human"]):
+            st.markdown(message["AI"])
+
+    # Accept user input
+    if prompt := st.chat_input("What is up?"):
+        with st.expander(label="Chat History",expanded=False):
+            st.write(st.session_state.messages)
+        # Display user message in chat message container
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Generate a response using the agent
+        response = agent.run(prompt, callbacks=[st_callback])
+        # Display assistant response in chat message container
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            message_placeholder.markdown(response)
+        # Add assistant response to chat history
+        st.session_state.messages.append({"human": prompt, "AI": response})
 
 
 
 if 'logged_in' not in st.session_state or not st.session_state.logged_in:
-    st.session_state.logged_in = login()
+    login()
 else:
-    main_page()
+    run_chatbot()
